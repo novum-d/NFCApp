@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">NFCApp</string>
+    <string name="nfc_ready">NFCタグをかざしてください</string>
+    <string name="nfc_reading">NFCタグを読み取り中です</string>
+    <string name="nfc_read_completed">NFCタグの読み取りが完了しました</string>
+    <string name="nfc_tag_lost">読み取り中にタグが離れました。もう一度かざしてください</string>
+    <string name="nfc_io_failed">NFCタグの読み取りに失敗しました。もう一度お試しください</string>
+    <string name="nfc_invalid_data">NFCタグのデータを読み取れませんでした</string>
+    <string name="nfc_unsupported_tag">このNFCタグには対応していません</string>
+    <string name="nfc_unavailable">NFCが利用できません。端末の設定を確認してください</string>
+</resources>
