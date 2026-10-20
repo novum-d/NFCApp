@@ -22,7 +22,6 @@ fun MainNavigation(nfcReadStatus: NfcReadStatus) {
             entryProvider {
                 entry<Main> {
                     MainScreen(
-                        onItemClick = { navKey -> backStack.add(navKey) },
                         nfcReadStatus = nfcReadStatus,
                         modifier = Modifier
                           .safeDrawingPadding()

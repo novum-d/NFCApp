@@ -8,4 +8,12 @@
     <string name="nfc_invalid_data">NFCタグのデータを読み取れませんでした</string>
     <string name="nfc_unsupported_tag">このNFCタグには対応していません</string>
     <string name="nfc_unavailable">NFCが利用できません。端末の設定を確認してください</string>
+    <string name="memory_title">NFCメモリ</string>
+    <string name="memory_count">読み取ったメモリ：%1$d件</string>
+    <string name="memory_format_hint">4バイト単位で表示します。オフセットは読取領域の先頭からの位置、ASCIIの「.」は表示できないバイトです。</string>
+    <string name="memory_offset">オフセット 0x%1$04X</string>
+    <string name="memory_hex">HEX %1$s</string>
+    <string name="memory_ascii">ASCII %1$s</string>
+    <string name="memory_empty">表示できるメモリデータはありません</string>
+    <string name="memory_waiting">読み取ったメモリをここに表示します</string>
 </resources>

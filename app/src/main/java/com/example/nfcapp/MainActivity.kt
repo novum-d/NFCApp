@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                             "userMemoryBytes=${read.userMemory.size}, " +
                             "businessIdPresent=${businessId != null}"
                     )
-                    nfcReadStatusStore.onReadCompleted()
+                    nfcReadStatusStore.onReadCompleted(formatRawMemory(read.userMemory))
                 } catch (e: UnsupportedTagException) {
                     Log.w("MainActivity", "Unsupported NFC-A tag: ${e.message}")
                     nfcReadStatusStore.onReadFailed(NfcReadFailure.UNSUPPORTED_TAG)
@@ -136,53 +136,16 @@ class MainActivity : ComponentActivity() {
                 // 以降のRaw I/Oを実行できるよう、NFC-Vタグとの接続を開く。
                 nfcV.connect()
 
-                // ISO 15693のフレームを組み立てる。CRCはAndroid側で付加される。
-                // 0x02: High data rate、0x20: Read Single Block、0x00: ブロック0。
-                val request = byteArrayOf(0x02, 0x20, 0x00)
-                val response = nfcV.transceive(request)
-
-                // レスポンスの先頭1バイトは、コマンド実行結果を表すResponse Flags。
-                val responseFlags = response.firstOrNull()?.toInt()?.and(0xFF)
-
-                when {
-                    // 応答が空の場合は、データとして解釈せず異常終了とする。
-                    responseFlags == null -> {
-                        Log.e("MainActivity", "Empty NFC-V response")
-                        nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
-                    }
-
-                    // Response Flagsのbit 0が1なら、後続バイトはデータではなくエラー情報。
-                    responseFlags and 0x01 != 0 -> {
-                        Log.e(
-                            "MainActivity",
-                            "Read error: request=${request.toHex()}, response=${response.toHex()}"
-                        )
-                        nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
-                    }
-
-                    // Option flagなしのSingle Block Readは、Flags 1バイト＋データ4バイトを期待する。
-                    response.size != 5 -> {
-                        Log.e(
-                            "MainActivity",
-                            "Unexpected response length: ${response.size}, response=${response.toHex()}"
-                        )
-                        nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
-                    }
-
-                    // 正常応答では先頭のFlagsを除き、残り4バイトをブロック0として記録する。
-                    else -> {
-                        Log.d(
-                            "MainActivity",
-                            "ReadSingleBlock: request=${request.toHex()}, " +
-                                    "response=${response.toHex()}, " +
-                                    "block0=${response.copyOfRange(1, 5).toHex()}"
-                        )
-                        nfcReadStatusStore.onReadCompleted()
-                    }
-                }
+                // SLIのユーザー領域をすべて読めた場合だけ、整形した一覧を公開する。
+                val memory = readIcodeSliUserMemory(nfcV::transceive)
+                Log.d("MainActivity", "NFC-V user memory read: bytes=${memory.size}")
+                nfcReadStatusStore.onReadCompleted(formatRawMemory(memory))
             } catch (e: TagLostException) {
                 Log.e("MainActivity", "Tag left the field", e)
                 nfcReadStatusStore.onReadFailed(NfcReadFailure.TAG_LOST)
+            } catch (e: InvalidNfcVResponseException) {
+                Log.e("MainActivity", "Malformed NFC-V response", e)
+                nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
             } catch (e: IOException) {
                 Log.e("MainActivity", "NFC-V I/O failed", e)
                 nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
