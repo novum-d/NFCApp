@@ -2,10 +2,12 @@ package com.example.nfcapp
 
 import com.github.michaelbull.result.Result
 import com.github.michaelbull.result.unwrap
+import com.github.michaelbull.result.unwrapError
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.io.IOException
 
 class IcodeSliReaderTest {
     @Test
@@ -47,5 +49,26 @@ class IcodeSliReaderTest {
             ),
             result.unwrap(),
         )
+    }
+
+    @Test
+    fun stopsAtTheFirstReadErrorAndPropagatesItsCause() {
+        val requests = mutableListOf<List<Byte>>()
+        val cause = IOException("block 2 could not be read")
+
+        val result = readIcodeSliItems { request ->
+            requests.add(request.toList())
+            if (requests.size == 2) throw cause
+            byteArrayOf(0x00, 0x00, 0x01, 0x02, 0x03)
+        }
+
+        assertEquals(
+            listOf(
+                byteArrayOf(0x02, 0x20, 0x01).toList(),
+                byteArrayOf(0x02, 0x20, 0x02).toList(),
+            ),
+            requests,
+        )
+        assertEquals(NfcReadError.Io(cause), result.unwrapError())
     }
 }

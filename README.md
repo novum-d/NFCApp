@@ -27,11 +27,11 @@ NFCのRaw I/Oをボトムアップで実装する学習用アプリです。こ�
 ReaderCallbackが受け取ったTag
   → IcodeSliReader.read(tag)
   → nfcResult { ... } の中でNfcVを取得
-  → connect()で接続
-  → ブロック1〜4へ順番にRead Single Blockを送信
+  → andThenでconnect()の成功後だけ読取へ進む
+  → binding内でreadNfcVBlock(...).bind()をブロック1〜4へ順番に実行
   → 各応答の先頭にあるResponse Flagsを除き、4バイトずつ連結
   → parseMemoryItems()で16バイトを8件のデータに変換
-  → useがclose()を呼び、接続を解放
+  → useNfcConnectionがclose()を呼び、接続を解放
   → Ok(ImmutableList<RawMemoryItem>)を返す
 ```
 
@@ -48,7 +48,28 @@ ReaderCallbackが受け取ったTag
 
 例えば応答が `00 10 11 12 13` なら、データとして使うのは `10 11 12 13` です。先頭の `00` はデータに含めません。
 
-接続・切断は `IcodeSliReader`、1回の送受信は `NfcVBlockReader.kt`、配置とHEX表示への変換は `RawMemoryItem.kt` / `ByteArrayHex.kt` が担当します。
+接続と読取の連結は `IcodeSliReader`、接続の解放は `NfcConnection.kt`、1回の送受信は `NfcVBlockReader.kt`、配置とHEX表示への変換は `RawMemoryItem.kt` / `ByteArrayHex.kt` が担当します。
+
+## ROPによるResultの連結
+
+1ブロックの読取は `readNfcVBlock()` が `Result<ByteArray, NfcReadError>` として返します。連続読取は、このResultを `binding` / `.bind()` で連結します。
+
+```kotlin
+binding {
+    val memory = ByteArrayOutputStream(targetBlockNumbers.count() * BYTES_PER_BLOCK)
+    for (blockNumber in targetBlockNumbers) {
+        val blockBytes = readNfcVBlock(blockNumber, transceive).bind()
+        memory.write(blockBytes)
+    }
+    parseMemoryItems(memory.toByteArray())
+}
+```
+
+`bind()` は `Ok` の値を取り出します。`Err` ならそのエラーを返して `binding` を打ち切るため、後続ブロックの送信と変換は実行しません。`readNfcVBlock()` のResultを利用し、内部関数から例外を投げ直して上位で再変換する処理は設けていません。
+
+タグ取得、接続、読取の順序は `andThen` で連結しています。`useNfcConnection` は成功・Err・キャンセルの各経路で接続を閉じます。読取と切断が両方失敗した場合は、元の読取エラーを保持し、切断時の例外を `cause.suppressed` に追加します。
+
+`binding` と `andThen` は追加済みの `kotlin-result:2.3.1` に含まれます。この同期読取に追加の依存関係は必要ありません。[公式のbindingの説明](https://github.com/michaelbull/kotlin-result#binding)
 
 ## Data層APIの呼び出し例
 
@@ -97,7 +118,7 @@ val result: Result<Ntag213Read, NfcReadError> = nfcResult {
 
 元の例外は `cause` に保持します。コルーチンの `CancellationException` とJVMの `Error` は捕捉せず、そのまま伝えます。
 
-今回実装したのは例外をエラー型へ変換する境界までです。上位でのエラー表示、リトライ、タグ応答の詳細なエラーコード別処理は今後扱います。ブロック読取には、エラー応答をデータと誤認しないためのFlags・応答長の確認を入れています。
+Data層ではエラー型への変換と、ROPによって同じエラーを上位へ伝えるところまで扱っています。上位でのエラー表示、リトライ、タグ応答の詳細なエラーコード別処理は今後扱います。ブロック読取には、エラー応答をデータと誤認しないためのFlags・応答長の確認を入れています。
 
 ## テストと確認範囲
 
@@ -105,13 +126,15 @@ val result: Result<Ntag213Read, NfcReadError> = nfcResult {
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ```
 
-今回追加したテストはData層の正常系と、共通例外変換の基本動作を対象にしています。
+今回追加したテストはData層の正常系、共通例外変換、ROPの失敗経路と接続解放の基本動作を対象にしています。
 
 - HEX表示と2バイト単位への分割。
 - 実ブロック番号1〜4・ブロック内のバイト位置の保持。
 - Read Single Blockの送信内容と、正常応答からの4バイト抽出。
 - 実ブロック1〜4への4回の送信順序と、取得データから8件への変換。
 - 共通ラッパーの正常値、I/O・不正データ・権限例外の変換、キャンセルの再送出。
+- 途中の読取エラーで後続ブロックを送信せず、同じ原因を上位へ伝えること。
+- 成功・Err・キャンセル後の接続解放と、読取エラー・切断エラーの優先順位。
 
 JVMテストでは送受信関数に模擬応答を渡しています。実タグとの通信、Androidの接続・切断、対象端末での読取は未確認です。新規のViewModel・UIテストは追加していません。
 

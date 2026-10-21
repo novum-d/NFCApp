@@ -13,14 +13,6 @@ fun readNfcVBlock(
     blockNumber: Int,
     transceive: (ByteArray) -> ByteArray,
 ): Result<ByteArray, NfcReadError> = nfcResult {
-    readNfcVBlockBytes(blockNumber, transceive)
-}
-
-/** 複数ブロックを一つのnfcResultで扱うための、内部用の読取処理。 */
-internal fun readNfcVBlockBytes(
-    blockNumber: Int,
-    transceive: (ByteArray) -> ByteArray,
-): ByteArray {
     require(blockNumber in 0..0xFF) { "Read Single Block requires a one-byte block number" }
 
     // 例: ブロック1なら [02 20 01]。
@@ -42,5 +34,5 @@ internal fun readNfcVBlockBytes(
     }
 
     // Flagsを除いた4バイトだけを返す。2バイト値の数値化やバイト順の変更は行わない。
-    return response.copyOfRange(RESPONSE_FLAGS_BYTES, response.size)
+    response.copyOfRange(RESPONSE_FLAGS_BYTES, response.size)
 }

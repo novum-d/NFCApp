@@ -3,6 +3,8 @@ package com.example.nfcapp
 import android.nfc.Tag
 import android.nfc.tech.NfcV
 import com.github.michaelbull.result.Result
+import com.github.michaelbull.result.andThen
+import com.github.michaelbull.result.binding
 import kotlinx.collections.immutable.ImmutableList
 import java.io.ByteArrayOutputStream
 
@@ -14,36 +16,32 @@ import java.io.ByteArrayOutputStream
  * https://developer.android.com/reference/android/nfc/tech/NfcV
  */
 class IcodeSliReader {
-    fun read(tag: Tag): Result<ImmutableList<RawMemoryItem>, NfcReadError> = nfcResult {
-        val nfcV = NfcV.get(tag) ?: throw UnsupportedTagException("NFC-V is unavailable")
-
-        // 一度だけ接続し、4回の読取が終わったら切断する。例外時もuseがcloseを呼ぶ。
-        // use/connectの公式サンプル:
-        // https://developer.android.com/develop/connectivity/nfc/advanced-nfc#read-write
-        nfcV.use { connection ->
-            connection.connect()
-            readIcodeSliItemsBytes(connection::transceive)
+    fun read(tag: Tag): Result<ImmutableList<RawMemoryItem>, NfcReadError> =
+        nfcResult {
+            NfcV.get(tag) ?: throw UnsupportedTagException("NFC-V is unavailable")
+        }.andThen { connection ->
+            // 接続に成功した場合だけ読取へ進む。Errでもキャンセルでも最後に接続を閉じる。
+            useNfcConnection(connection) {
+                nfcResult { connection.connect() }
+                    .andThen { readIcodeSliItems(connection::transceive) }
+            }
         }
-    }
 }
 
 /** 接続済みタグの送受信を受け取る。テストでは模擬応答を渡し、通信手順を確認する。 */
 fun readIcodeSliItems(
     transceive: (ByteArray) -> ByteArray,
-): Result<ImmutableList<RawMemoryItem>, NfcReadError> = nfcResult {
-    readIcodeSliItemsBytes(transceive)
-}
-
-private fun readIcodeSliItemsBytes(
-    transceive: (ByteArray) -> ByteArray,
-): ImmutableList<RawMemoryItem> {
+): Result<ImmutableList<RawMemoryItem>, NfcReadError> = binding {
     val memory = ByteArrayOutputStream(targetBlockNumbers.count() * BYTES_PER_BLOCK)
 
     // 実ブロック1, 2, 3, 4へ順番にRead Single Blockを送る。ブロック0は読まない。
     for (blockNumber in targetBlockNumbers) {
-        memory.write(readNfcVBlockBytes(blockNumber, transceive))
+        // bindはOkのデータを取り出し、Errなら同じエラーを返してここで打ち切る。
+        // 例外の変換はreadNfcVBlockに任せ、ここではResultを連結する。
+        val blockBytes = readNfcVBlock(blockNumber, transceive).bind()
+        memory.write(blockBytes)
     }
 
     // 取得した16バイトは既にテストした変換処理へ渡し、上位には不変リストを返す。
-    return parseMemoryItems(memory.toByteArray())
+    parseMemoryItems(memory.toByteArray())
 }
