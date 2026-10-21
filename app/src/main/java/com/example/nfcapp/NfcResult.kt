@@ -40,7 +40,8 @@ internal fun Throwable.toNfcReadError(): NfcReadError =
         is TagLostException -> NfcReadError.TagLost(this)
         is UnsupportedTagException -> NfcReadError.UnsupportedTag(this)
         is IOException -> NfcReadError.Io(this)
-        is FormatException, is IllegalArgumentException -> NfcReadError.InvalidData(this)
+        is FormatException -> NfcReadError.InvalidData(this)
+        is IllegalArgumentException -> NfcReadError.InvalidData(this)
         is SecurityException -> NfcReadError.AccessDenied(this)
         is Exception -> NfcReadError.Unexpected(this)
         else -> throw this
