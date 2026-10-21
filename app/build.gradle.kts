@@ -54,6 +54,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.activity.compose)
   implementation(libs.kotlinx.collections.immutable)
+  implementation(libs.kotlin.result)
 
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
