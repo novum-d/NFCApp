@@ -71,7 +71,7 @@ binding {
 
 タグ取得、接続、読取の順序は `andThen` で連結しています。`useNfcConnection` は成功・Err・キャンセルの各経路で接続を閉じます。読取と切断が両方失敗した場合は、元の読取エラーを保持し、切断時の例外を `cause.suppressed` に追加します。
 
-`binding` と `andThen` は追加済みの `kotlin-result:2.3.1` に含まれます。この同期読取に追加の依存関係は必要ありません。[公式のbindingの説明](https://github.com/michaelbull/kotlin-result#binding)
+`binding` と `andThen` は追加済みの `kotlin-result:2.0.1` に含まれます。この同期読取に追加の依存関係は必要ありません。[公式のbindingの説明](https://github.com/michaelbull/kotlin-result#binding)
 
 ## Data層APIの呼び出し例
 
