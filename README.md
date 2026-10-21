@@ -99,6 +99,8 @@ suspend fun loadItems(tag: Tag): Result<ImmutableList<RawMemoryItem>, NfcReadErr
 
 `nfcResult { ... }` は、ラムダの最後の値を `Ok` に包み、発生した例外を `Err(NfcReadError)` に変換します。タグ種別を引数に取らないため、他のタグの取得処理でも使用できます。
 
+例外の捕捉は `com.github.michaelbull.result.runCatching` に統一しています。`nfcResult` は `runCatching(block).mapError { it.toNfcReadError() }` で実装し、例外の分類を共通化しています。接続の解放や既存Activityの例外処理も同じ `runCatching` を使用します。
+
 例えば、既存のNTAG213読取を同じ形式で呼ぶ場合は次のように書けます。
 
 ```kotlin

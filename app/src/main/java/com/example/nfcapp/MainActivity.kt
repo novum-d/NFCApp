@@ -20,6 +20,13 @@ import androidx.lifecycle.lifecycleScope
 import com.example.nfcapp.theme.NFCAppTheme
 import com.example.nfcapp.ui.main.NfcReadFailure
 import com.example.nfcapp.ui.main.NfcReadStatusStore
+import com.github.michaelbull.result.Err
+import com.github.michaelbull.result.Ok
+import com.github.michaelbull.result.andThen
+import com.github.michaelbull.result.getOrThrow
+import com.github.michaelbull.result.onFailure
+import com.github.michaelbull.result.orElse
+import com.github.michaelbull.result.runCatching
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -69,132 +76,152 @@ class MainActivity : ComponentActivity() {
 
         // connect()とtransceive()はブロッキングI/Oなので、メインスレッドでは実行しない。
         lifecycleScope.launch(Dispatchers.IO) {
-            try {
-            // 技術別の処理へ分岐する前に、タグの共通情報を取得する。
-            val id = tag.id.toHex()
-            val technologies = tag.techList.toList()
+            runCatching tagRead@ {
+                // 技術別の処理へ分岐する前に、タグの共通情報を取得する。
+                val id = tag.id.toHex()
+                val technologies = tag.techList.toList()
 
-            // NFC-Vを優先する。ISO-DEPはNTAG213のRaw READ対象外とする。
-            val nfcV = NfcV.get(tag)
+                // NFC-Vを優先する。ISO-DEPはNTAG213のRaw READ対象外とする。
+                val nfcV = NfcV.get(tag)
 
-            if (nfcV == null) {
-                // NFC-AだけのタグはReaderでNTAG213か判定し、それ以外は対象外。
-                if (routeForTechnologies(technologies) != NfcTagRoute.NTAG213) {
-                    Log.w("MainActivity", "Unsupported tag technologies: $technologies")
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.UNSUPPORTED_TAG)
-                    return@launch
-                }
-                // 読取で失敗した理由を分類して記録し、次のタグ検出を継続する。
-                try {
-                    // タグI/OとNDEFの比較はReader、業務IDへの変換はParserに分ける。
-                    val read = ntag213Reader.read(tag)
-                    val businessId = businessIdParser.parse(read)
-                    // UIDやNDEF本文は出さず、比較結果と長さだけを検証用に記録する。
-                    Log.d(
-                        "MainActivity",
-                        "NTAG213 read: comparison=${read.comparison}, " +
-                            "platformNdefBytes=${read.platformNdefMessage?.size}, " +
-                            "rawNdefBytes=${read.rawNdefMessage?.size}, " +
-                            "userMemoryBytes=${read.userMemory.size}, " +
-                            "businessIdPresent=${businessId != null}"
-                    )
-                    nfcReadStatusStore.onReadCompleted()
-                } catch (e: UnsupportedTagException) {
-                    Log.w("MainActivity", "Unsupported NFC-A tag: ${e.message}")
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.UNSUPPORTED_TAG)
-                } catch (e: TagLostException) {
-                    Log.w("MainActivity", "NTAG213 left the field", e)
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.TAG_LOST)
-                } catch (e: IOException) {
-                    Log.e("MainActivity", "NTAG213 I/O failed", e)
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
-                } catch (e: FormatException) {
-                    Log.e("MainActivity", "Malformed NDEF message", e)
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
-                } catch (e: SecurityException) {
-                    Log.e("MainActivity", "NTAG213 handle is no longer valid", e)
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
-                } catch (e: IllegalArgumentException) {
-                    Log.e("MainActivity", "Malformed Type 2 TLV", e)
-                    nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
-                }
-                return@launch
-            }
-
-            // ここからNFC-Vの処理。検出時にAndroidが取得した情報は接続せず参照できる。
-            val discoveryFlags = nfcV.responseFlags.toInt() and 0xFF
-            val dsfId = nfcV.dsfId.toInt() and 0xFF
-
-            Log.d(
-                "MainActivity",
-                "ID: $id, Technologies: $technologies, " +
-                        "DiscoveryResponseFlags: 0x%02X, DSFID: 0x%02X, MaxTransceive: %d"
-                            .format(discoveryFlags, dsfId, nfcV.maxTransceiveLength)
-            )
-
-            try {
-                // 以降のRaw I/Oを実行できるよう、NFC-Vタグとの接続を開く。
-                nfcV.connect()
-
-                // ISO 15693のフレームを組み立てる。CRCはAndroid側で付加される。
-                // 0x02: High data rate、0x20: Read Single Block、0x00: ブロック0。
-                val request = byteArrayOf(0x02, 0x20, 0x00)
-                val response = nfcV.transceive(request)
-
-                // レスポンスの先頭1バイトは、コマンド実行結果を表すResponse Flags。
-                val responseFlags = response.firstOrNull()?.toInt()?.and(0xFF)
-
-                when {
-                    // 応答が空の場合は、データとして解釈せず異常終了とする。
-                    responseFlags == null -> {
-                        Log.e("MainActivity", "Empty NFC-V response")
-                        nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
+                if (nfcV == null) {
+                    // NFC-AだけのタグはReaderでNTAG213か判定し、それ以外は対象外。
+                    if (routeForTechnologies(technologies) != NfcTagRoute.NTAG213) {
+                        Log.w("MainActivity", "Unsupported tag technologies: $technologies")
+                        nfcReadStatusStore.onReadFailed(NfcReadFailure.UNSUPPORTED_TAG)
+                        return@tagRead
                     }
-
-                    // Response Flagsのbit 0が1なら、後続バイトはデータではなくエラー情報。
-                    responseFlags and 0x01 != 0 -> {
-                        Log.e(
-                            "MainActivity",
-                            "Read error: request=${request.toHex()}, response=${response.toHex()}"
-                        )
-                        nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
-                    }
-
-                    // Option flagなしのSingle Block Readは、Flags 1バイト＋データ4バイトを期待する。
-                    response.size != 5 -> {
-                        Log.e(
-                            "MainActivity",
-                            "Unexpected response length: ${response.size}, response=${response.toHex()}"
-                        )
-                        nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
-                    }
-
-                    // 正常応答では先頭のFlagsを除き、残り4バイトをブロック0として記録する。
-                    else -> {
+                    // 読取で失敗した理由を分類して記録し、次のタグ検出を継続する。
+                    runCatching {
+                        // タグI/OとNDEFの比較はReader、業務IDへの変換はParserに分ける。
+                        val read = ntag213Reader.read(tag)
+                        val businessId = businessIdParser.parse(read)
+                        // UIDやNDEF本文は出さず、比較結果と長さだけを検証用に記録する。
                         Log.d(
                             "MainActivity",
-                            "ReadSingleBlock: request=${request.toHex()}, " +
-                                    "response=${response.toHex()}, " +
-                                    "block0=${response.copyOfRange(1, 5).toHex()}"
+                            "NTAG213 read: comparison=${read.comparison}, " +
+                                "platformNdefBytes=${read.platformNdefMessage?.size}, " +
+                                "rawNdefBytes=${read.rawNdefMessage?.size}, " +
+                                "userMemoryBytes=${read.userMemory.size}, " +
+                                "businessIdPresent=${businessId != null}"
                         )
                         nfcReadStatusStore.onReadCompleted()
-                    }
+                    }.orElse { e ->
+                        when (e) {
+                            is UnsupportedTagException -> {
+                                Log.w("MainActivity", "Unsupported NFC-A tag: ${e.message}")
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.UNSUPPORTED_TAG)
+                            }
+                            is TagLostException -> {
+                                Log.w("MainActivity", "NTAG213 left the field", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.TAG_LOST)
+                            }
+                            is IOException -> {
+                                Log.e("MainActivity", "NTAG213 I/O failed", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
+                            }
+                            is FormatException -> {
+                                Log.e("MainActivity", "Malformed NDEF message", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
+                            }
+                            is SecurityException -> {
+                                Log.e("MainActivity", "NTAG213 handle is no longer valid", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
+                            }
+                            is IllegalArgumentException -> {
+                                Log.e("MainActivity", "Malformed Type 2 TLV", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
+                            }
+                            else -> return@orElse Err(e)
+                        }
+                        Ok(Unit)
+                    }.getOrThrow()
+                    return@tagRead
                 }
-            } catch (e: TagLostException) {
-                Log.e("MainActivity", "Tag left the field", e)
-                nfcReadStatusStore.onReadFailed(NfcReadFailure.TAG_LOST)
-            } catch (e: IOException) {
-                Log.e("MainActivity", "NFC-V I/O failed", e)
-                nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
-            } finally {
-                // 成功・失敗・タグ離脱のどの場合でも、接続とNFCリソースを解放する。
-                runCatching { nfcV.close() }
-                    .onFailure { Log.e("MainActivity", "Failed to close NFC-V", it) }
-            }
-            } finally {
+
+                // ここからNFC-Vの処理。検出時にAndroidが取得した情報は接続せず参照できる。
+                val discoveryFlags = nfcV.responseFlags.toInt() and 0xFF
+                val dsfId = nfcV.dsfId.toInt() and 0xFF
+
+                Log.d(
+                    "MainActivity",
+                    "ID: $id, Technologies: $technologies, " +
+                            "DiscoveryResponseFlags: 0x%02X, DSFID: 0x%02X, MaxTransceive: %d"
+                                .format(discoveryFlags, dsfId, nfcV.maxTransceiveLength)
+                )
+
+                runCatching {
+                    runCatching {
+                        // 以降のRaw I/Oを実行できるよう、NFC-Vタグとの接続を開く。
+                        nfcV.connect()
+
+                        // ISO 15693のフレームを組み立てる。CRCはAndroid側で付加される。
+                        // 0x02: High data rate、0x20: Read Single Block、0x00: ブロック0。
+                        val request = byteArrayOf(0x02, 0x20, 0x00)
+                        val response = nfcV.transceive(request)
+
+                        // レスポンスの先頭1バイトは、コマンド実行結果を表すResponse Flags。
+                        val responseFlags = response.firstOrNull()?.toInt()?.and(0xFF)
+
+                        when {
+                            // 応答が空の場合は、データとして解釈せず異常終了とする。
+                            responseFlags == null -> {
+                                Log.e("MainActivity", "Empty NFC-V response")
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
+                            }
+
+                            // Response Flagsのbit 0が1なら、後続バイトはデータではなくエラー情報。
+                            responseFlags and 0x01 != 0 -> {
+                                Log.e(
+                                    "MainActivity",
+                                    "Read error: request=${request.toHex()}, response=${response.toHex()}"
+                                )
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
+                            }
+
+                            // Option flagなしのSingle Block Readは、Flags 1バイト＋データ4バイトを期待する。
+                            response.size != 5 -> {
+                                Log.e(
+                                    "MainActivity",
+                                    "Unexpected response length: ${response.size}, response=${response.toHex()}"
+                                )
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.INVALID_DATA)
+                            }
+
+                            // 正常応答では先頭のFlagsを除き、残り4バイトをブロック0として記録する。
+                            else -> {
+                                Log.d(
+                                    "MainActivity",
+                                    "ReadSingleBlock: request=${request.toHex()}, " +
+                                            "response=${response.toHex()}, " +
+                                            "block0=${response.copyOfRange(1, 5).toHex()}"
+                                )
+                                nfcReadStatusStore.onReadCompleted()
+                            }
+                        }
+                    }.orElse { e ->
+                        when (e) {
+                            is TagLostException -> {
+                                Log.e("MainActivity", "Tag left the field", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.TAG_LOST)
+                            }
+                            is IOException -> {
+                                Log.e("MainActivity", "NFC-V I/O failed", e)
+                                nfcReadStatusStore.onReadFailed(NfcReadFailure.IO)
+                            }
+                            else -> return@orElse Err(e)
+                        }
+                        Ok(Unit)
+                    }
+                }.also {
+                    // 成功・失敗・タグ離脱のどの場合でも、接続とNFCリソースを解放する。
+                    runCatching { nfcV.close() }
+                        .onFailure { Log.e("MainActivity", "Failed to close NFC-V", it) }
+                }.andThen { it }.getOrThrow()
+            }.also {
                 // どの分岐・例外から抜けても、次のタグ検出を受け付けられるようにする。
                 readInProgress.set(false)
-            }
+            }.getOrThrow()
         }
     }
 

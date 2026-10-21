@@ -61,4 +61,15 @@ class NfcResultTest {
 
         assertSame(cause, thrown)
     }
+
+    @Test
+    fun rethrowsJvmErrorsInsteadOfReturningAnError() {
+        val cause = AssertionError("fatal failure")
+
+        val thrown = assertThrows(AssertionError::class.java) {
+            nfcResult<Unit> { throw cause }
+        }
+
+        assertSame(cause, thrown)
+    }
 }

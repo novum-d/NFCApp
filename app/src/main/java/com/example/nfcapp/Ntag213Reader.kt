@@ -3,6 +3,8 @@ package com.example.nfcapp
 import android.nfc.Tag
 import android.nfc.tech.Ndef
 import android.nfc.tech.NfcA
+import com.github.michaelbull.result.getOrThrow
+import com.github.michaelbull.result.runCatching
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 
@@ -11,7 +13,7 @@ class Ntag213Reader {
     fun read(tag: Tag): Ntag213Read {
         // Rawコマンドを送るためNfcAへ接続し、GET_VERSIONで対象タグを確認する。
         val nfcA = NfcA.get(tag) ?: throw UnsupportedTagException("NFC-A is unavailable")
-        val userMemory = try {
+        val userMemory = runCatching {
             nfcA.connect()
             nfcA.timeout = 1_000
 
@@ -31,21 +33,21 @@ class Ntag213Reader {
                 output.write(response)
             }
             output.toByteArray()
-        } finally {
+        }.also {
             // 途中で失敗した場合もRaw接続を閉じ、後続のNdef接続と競合させない。
             runCatching { nfcA.close() }
-        }
+        }.getOrThrow()
 
         // NfcAを閉じてからNdefへ接続し、Android標準APIが読むメッセージを取得する。
         // Raw側のTLV抽出結果との比較はNtag213Readにまとめる。
         val ndef = Ndef.get(tag)
         val ndefMessage = ndef?.let {
-            try {
+            runCatching {
                 it.connect()
                 it.ndefMessage?.toByteArray()
-            } finally {
+            }.also { _ ->
                 runCatching { it.close() }
-            }
+            }.getOrThrow()
         }
 
         return Ntag213Read(

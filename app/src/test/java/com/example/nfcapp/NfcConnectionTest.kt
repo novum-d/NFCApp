@@ -68,4 +68,17 @@ class NfcConnectionTest {
         assertSame(cancellation, thrown)
         assertEquals(1, closeCount)
     }
+
+    @Test
+    fun closesAndRethrowsJvmErrors() {
+        val failure = AssertionError("fatal read failure")
+        var closeCount = 0
+
+        val thrown = assertThrows(AssertionError::class.java) {
+            useNfcConnection<Unit>(Closeable { closeCount++ }) { throw failure }
+        }
+
+        assertSame(failure, thrown)
+        assertEquals(1, closeCount)
+    }
 }

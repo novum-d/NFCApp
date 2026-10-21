@@ -8,6 +8,7 @@ Read this file before changing the repository. This is the repository's project-
 - Do not introduce UseCase, Repository, CQRS, Value Object, new interfaces, or new modules merely to follow an architecture pattern. Add a boundary only when the current code has a concrete need for it.
 - The business ID format is not specified. Do not infer it from a tag UID, memory offset, or NDEF payload.
 - Work in small, reviewable steps. Add characterization tests for existing behavior before moving production code when feasible.
+- Capture exceptions with `com.github.michaelbull.result.runCatching`; do not introduce `try/catch` or `try/finally` blocks. Preserve cancellation propagation, original errors, and resource cleanup when composing Results.
 
 ## NFC behavior to preserve during refactoring
 

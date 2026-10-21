@@ -2,9 +2,9 @@ package com.example.nfcapp
 
 import android.nfc.FormatException
 import android.nfc.TagLostException
-import com.github.michaelbull.result.Err
-import com.github.michaelbull.result.Ok
 import com.github.michaelbull.result.Result
+import com.github.michaelbull.result.mapError
+import com.github.michaelbull.result.runCatching
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -30,19 +30,18 @@ sealed interface NfcReadError {
  * kotlin-result: https://github.com/michaelbull/kotlin-result#creating-results
  */
 fun <T> nfcResult(block: () -> T): Result<T, NfcReadError> =
-    try {
-        Ok(block())
-    } catch (exception: CancellationException) {
-        throw exception
-    } catch (exception: Exception) {
-        val error = when (exception) {
-            // TagLostExceptionはIOExceptionの派生型なので、先に判定する。
-            is TagLostException -> NfcReadError.TagLost(exception)
-            is UnsupportedTagException -> NfcReadError.UnsupportedTag(exception)
-            is IOException -> NfcReadError.Io(exception)
-            is FormatException, is IllegalArgumentException -> NfcReadError.InvalidData(exception)
-            is SecurityException -> NfcReadError.AccessDenied(exception)
-            else -> NfcReadError.Unexpected(exception)
-        }
-        Err(error)
+    runCatching(block).mapError { it.toNfcReadError() }
+
+internal fun Throwable.toNfcReadError(): NfcReadError =
+    when (this) {
+        // runCatchingはThrowableを捕捉するため、キャンセルとJVMのErrorは再送出する。
+        is CancellationException -> throw this
+        // TagLostExceptionはIOExceptionの派生型なので、先に判定する。
+        is TagLostException -> NfcReadError.TagLost(this)
+        is UnsupportedTagException -> NfcReadError.UnsupportedTag(this)
+        is IOException -> NfcReadError.Io(this)
+        is FormatException, is IllegalArgumentException -> NfcReadError.InvalidData(this)
+        is SecurityException -> NfcReadError.AccessDenied(this)
+        is Exception -> NfcReadError.Unexpected(this)
+        else -> throw this
     }
