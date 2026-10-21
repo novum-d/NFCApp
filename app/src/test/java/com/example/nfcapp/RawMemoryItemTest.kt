@@ -10,7 +10,7 @@ class RawMemoryItemTest {
     fun blockOneIsSplitIntoTwoItemsWithByteOffsets() {
         val bytes = byteArrayOf(0x00, 0x01, 0x02, 0x03)
 
-        val result: ImmutableList<RawMemoryItem> = parseBlockItems(blockNumber = 1, bytes = bytes)
+        val result: ImmutableList<RawMemoryItem> = bytes.parseBlockItems(blockNumber = 1)
 
         assertEquals(
             persistentListOf(
@@ -30,7 +30,7 @@ class RawMemoryItemTest {
             0x0C, 0x0D, 0x0E, 0x0F,
         )
 
-        val result: ImmutableList<RawMemoryItem> = parseMemoryItems(bytes)
+        val result: ImmutableList<RawMemoryItem> = bytes.parseMemoryItems()
 
         assertEquals(
             persistentListOf(

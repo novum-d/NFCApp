@@ -43,5 +43,5 @@ fun readIcodeSliItems(
     }
 
     // 取得した16バイトは既にテストした変換処理へ渡し、上位には不変リストを返す。
-    parseMemoryItems(memory.toByteArray())
+    memory.toByteArray().parseMemoryItems()
 }

@@ -19,6 +19,8 @@ NFCのRaw I/Oをボトムアップで実装する学習用アプリです。こ�
 - `byteOffset`: そのブロック内でデータが始まるバイト位置。今回の配置では0または2。
 - `hex`: 2バイトを大文字・空白区切りで表した文字列。例: `"01 FF"`。
 
+バイト列の変換は `ByteArray` の拡張関数です。`bytes.toDisplayHex()`、`bytes.parseBlockItems(blockNumber = 1)`、`bytes.parseMemoryItems()` のように、対象のバイト列から直接呼び出せます。
+
 2バイトの数値化や文字コードの解釈は行いません。タグから取得したバイト順を保ちます。
 
 ## NFCの処理の流れ
@@ -61,7 +63,7 @@ binding {
         val blockBytes = readNfcVBlock(blockNumber, transceive).bind()
         memory.write(blockBytes)
     }
-    parseMemoryItems(memory.toByteArray())
+    memory.toByteArray().parseMemoryItems()
 }
 ```
 

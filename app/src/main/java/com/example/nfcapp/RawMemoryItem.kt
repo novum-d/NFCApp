@@ -13,8 +13,8 @@ data class RawMemoryItem(
     val hex: String,
 )
 
-fun parseBlockItems(blockNumber: Int, bytes: ByteArray): ImmutableList<RawMemoryItem> =
-    bytes.toList()
+fun ByteArray.parseBlockItems(blockNumber: Int): ImmutableList<RawMemoryItem> =
+    toList()
         .chunked(BYTES_PER_ITEM)
         .mapIndexed { index, itemBytes ->
             RawMemoryItem(
@@ -26,13 +26,12 @@ fun parseBlockItems(blockNumber: Int, bytes: ByteArray): ImmutableList<RawMemory
         .toPersistentList()
 
 /** 実ブロック1〜4から順番に読み取った16バイトを受け取る。 */
-fun parseMemoryItems(bytes: ByteArray): ImmutableList<RawMemoryItem> =
-    bytes.toList()
+fun ByteArray.parseMemoryItems(): ImmutableList<RawMemoryItem> =
+    toList()
         .chunked(BYTES_PER_BLOCK)
         .flatMapIndexed { index, blockBytes ->
-            parseBlockItems(
+            blockBytes.toByteArray().parseBlockItems(
                 blockNumber = targetBlockNumbers.first + index,
-                bytes = blockBytes.toByteArray(),
             )
         }
         .toPersistentList()
